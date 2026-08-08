@@ -1,14 +1,15 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { View, Text, FlatList, RefreshControl } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ClipboardList } from "lucide-react-native";
+import { ClipboardList, RefreshCw } from "lucide-react-native";
+import { Pressable } from "react-native";
 import StatCard from "@/components/ui/StatCard";
 import SectionHeader from "@/components/ui/SectionHeader";
 import EmptyState from "@/components/ui/EmptyState";
 import RequestCard from "@/components/molecules/RequestCard";
 import { useAuth } from "@/lib/AuthContext";
-import { getMyRequests, getAvailableMatchCounts } from "@/lib/requests";
+import { subscribeToMyRequests, subscribeToRequestMatchCount } from "@/lib/requests";
 import type { BloodRequest } from "@/types/request";
 
 export default function MyRequestsScreen() {
@@ -18,23 +19,35 @@ export default function MyRequestsScreen() {
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
-  const load = useCallback(async () => {
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
     if (!user) return;
     setLoading(true);
-    try {
-      const results = await getMyRequests(user.uid);
+    const unsub = subscribeToMyRequests(user.uid, (results) => {
       setRequests(results);
-      setMatchCounts(await getAvailableMatchCounts(results.map((r) => r.id)));
-    } finally {
       setLoading(false);
-    }
-  }, [user]);
+    });
+    return unsub;
+  }, [user, refreshKey]);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  const requestIds = useMemo(() => requests.map((r) => r.id).sort().join(","), [requests]);
+
+  useEffect(() => {
+    const ids = requestIds ? requestIds.split(",") : [];
+    const unsubs = ids.map((id) =>
+      subscribeToRequestMatchCount(id, (count) => {
+        setMatchCounts((prev) => ({ ...prev, [id]: count }));
+      })
+    );
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [requestIds]);
+
+  const load = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const active = useMemo(() => requests.filter((r) => r.status === "open"), [requests]);
   const closed = useMemo(() => requests.filter((r) => r.status !== "open"), [requests]);
@@ -47,9 +60,17 @@ export default function MyRequestsScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-brand-bg">
-      <View className="px-5 pt-3 pb-2">
-        <Text className="text-2xl font-extrabold text-brand-text">My Requests</Text>
-        <Text className="text-brand-textsecondary text-sm">Manage your active blood appeals</Text>
+      <View className="px-5 pt-3 pb-2 flex-row items-center justify-between">
+        <View>
+          <Text className="text-2xl font-extrabold text-brand-text">My Requests</Text>
+          <Text className="text-brand-textsecondary text-sm">Manage your active blood appeals</Text>
+        </View>
+        <Pressable
+          onPress={() => load()}
+          className="w-9 h-9 rounded-full bg-white border border-brand-border items-center justify-center"
+        >
+          <RefreshCw size={15} color="#0F172A" />
+        </Pressable>
       </View>
 
       <FlatList

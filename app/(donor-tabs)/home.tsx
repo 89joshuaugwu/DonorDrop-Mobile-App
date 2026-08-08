@@ -11,11 +11,9 @@ import SectionHeader from "@/components/ui/SectionHeader";
 import EmptyState from "@/components/ui/EmptyState";
 import RequestCard from "@/components/molecules/RequestCard";
 import { useAuth } from "@/lib/AuthContext";
-import { getNearbyCompatibleRequests } from "@/lib/requests";
+import { subscribeToNearbyCompatibleRequests } from "@/lib/requests";
 import type { BloodRequest } from "@/types/request";
 import { Droplet } from "lucide-react-native";
-import { onSnapshot, doc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 
 const URGENCY_RANK: Record<string, number> = { Critical: 0, Urgent: 1, Normal: 2 };
 
@@ -32,41 +30,32 @@ export default function DonorHomeScreen() {
   const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState<"distance" | "urgency">("distance");
 
-  const loadRequests = useCallback(async () => {
-    if (!donorProfile) return;
-    setLoading(true);
-    try {
-      const results = await getNearbyCompatibleRequests(
-        donorProfile.bloodType,
-        donorProfile.lat,
-        donorProfile.lng
-      );
-      setRequests(results);
-    } finally {
-      setLoading(false);
-    }
-  }, [donorProfile]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadRequests();
-
-      // Auto-refresh requests every 5 minutes
-      const interval = setInterval(() => {
-        loadRequests();
-      }, 5 * 60 * 1000);
-
-      return () => clearInterval(interval);
-    }, [loadRequests])
-  );
-
-  // Listen to the global requests pulse to auto-refresh when ANY new request is made
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, "metadata", "requests"), () => {
-      loadRequests();
-    });
-    return unsub;
-  }, [loadRequests]);
+    if (!donorProfile) return;
+
+    setLoading(true);
+    const unsubscribe = subscribeToNearbyCompatibleRequests(
+      donorProfile.bloodType,
+      donorProfile.lat,
+      donorProfile.lng,
+      15, // default 15km radius
+      (newRequests) => {
+        setRequests(newRequests);
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [donorProfile, refreshKey]);
+
+  // Keep loadRequests for manual pull-to-refresh / button refresh
+  const loadRequests = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const sortedRequests = useMemo(() => {
     const copy = [...requests];

@@ -8,6 +8,7 @@ import {
   query,
   where,
   orderBy,
+  onSnapshot,
 } from "firebase/firestore";
 import { geohashForLocation, geohashQueryBounds, distanceBetween } from "geofire-common";
 import { db, ADMIN_API_URL } from "./firebase";
@@ -224,4 +225,125 @@ export async function getNearbyCompatibleRequests(
   }
 
   return results.sort((a, b) => a.distanceKm - b.distanceKm);
+}
+
+/**
+ * Real-time version of getNearbyCompatibleRequests.
+ * Calculates bounding boxes and attaches an onSnapshot listener to each.
+ * Merges the results, filters by distance/compatibility, and fires the callback.
+ * Returns an unsubscribe function to detach all listeners.
+ */
+export function subscribeToNearbyCompatibleRequests(
+  donorBloodType: BloodType,
+  lat: number,
+  lng: number,
+  radiusKm: number,
+  onUpdate: (requests: (BloodRequest & { distanceKm: number })[]) => void
+): () => void {
+  const center: [number, number] = [lat, lng];
+  const bounds = geohashQueryBounds(center, radiusKm * 1000);
+
+  const compatibleForTypes: BloodType[] = (
+    ["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"] as BloodType[]
+  ).filter((needed) => getCompatibleDonorTypes(needed).includes(donorBloodType));
+
+  // Map to store the latest results from all listeners
+  // Keyed by request ID to prevent duplicates across boundary overlaps
+  const requestsMap = new Map<string, BloodRequest & { distanceKm: number }>();
+  let initialLoadsRemaining = bounds.length;
+
+  const emitUpdate = () => {
+    // Only emit after all listeners have fired at least once (initial payload)
+    // or if bounds are empty (unlikely but possible).
+    if (initialLoadsRemaining > 0) return;
+
+    const results = Array.from(requestsMap.values());
+    results.sort((a, b) => a.distanceKm - b.distanceKm);
+    onUpdate(results);
+  };
+
+  const unsubscribes = bounds.map(([start, end]) => {
+    const q = query(
+      collection(db, "requests"),
+      orderBy("geohash"),
+      where("geohash", ">=", start),
+      where("geohash", "<=", end)
+    );
+
+    return onSnapshot(q, (snapshot) => {
+      // Process doc changes
+      snapshot.docChanges().forEach((change) => {
+        const docSnap = change.doc;
+        const request = { id: docSnap.id, ...docSnap.data() } as BloodRequest;
+
+        if (change.type === "removed") {
+          requestsMap.delete(request.id);
+          return;
+        }
+
+        // For added or modified, check compatibility and distance
+        if (request.status !== "open" || !compatibleForTypes.includes(request.bloodTypeNeeded)) {
+          requestsMap.delete(request.id); // might have been open, now fulfilled
+          return;
+        }
+
+        const distanceKm = distanceBetween([request.lat, request.lng], center);
+        if (distanceKm <= radiusKm) {
+          requestsMap.set(request.id, { ...request, distanceKm });
+        } else {
+          // It's outside the exact radius despite being in the bounding box
+          requestsMap.delete(request.id);
+        }
+      });
+
+      if (initialLoadsRemaining > 0) {
+        initialLoadsRemaining--;
+      }
+      
+      emitUpdate();
+    });
+  });
+
+  // Return a cleanup function that unsubscribes all active listeners
+  return () => {
+    unsubscribes.forEach((unsub) => unsub());
+  };
+}
+
+/**
+ * Real-time version of getMyRequests.
+ */
+export function subscribeToMyRequests(
+  requesterUid: string,
+  onUpdate: (requests: BloodRequest[]) => void
+): () => void {
+  const q = query(
+    collection(db, "requests"),
+    where("requesterUid", "==", requesterUid),
+    orderBy("createdAt", "desc")
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    const results = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as BloodRequest);
+    onUpdate(results);
+  });
+}
+
+/**
+ * Real-time version of getting match counts for a specific request.
+ */
+export function subscribeToRequestMatchCount(
+  requestId: string,
+  onUpdate: (count: number) => void
+): () => void {
+  const q = collection(db, "requests", requestId, "responses");
+
+  return onSnapshot(q, (snapshot) => {
+    // A match is when available === true
+    const availableCount = snapshot.docs.filter((d) => {
+      const data = d.data() as RequestResponse;
+      return data.available === true;
+    }).length;
+    onUpdate(availableCount);
+  });
 }

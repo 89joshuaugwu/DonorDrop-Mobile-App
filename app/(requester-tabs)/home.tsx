@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { View, Text, FlatList, RefreshControl, Pressable } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -10,7 +10,7 @@ import StatCard from "@/components/ui/StatCard";
 import EmptyState from "@/components/ui/EmptyState";
 import RequestCard from "@/components/molecules/RequestCard";
 import { useAuth } from "@/lib/AuthContext";
-import { getMyRequests, getAvailableMatchCounts } from "@/lib/requests";
+import { subscribeToMyRequests, subscribeToRequestMatchCount } from "@/lib/requests";
 import type { BloodRequest } from "@/types/request";
 
 export default function RequesterHomeScreen() {
@@ -20,31 +20,36 @@ export default function RequesterHomeScreen() {
   const [matchCounts, setMatchCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
     if (!user) return;
     setLoading(true);
-    try {
-      const results = await getMyRequests(user.uid);
+    const unsub = subscribeToMyRequests(user.uid, (results) => {
       const active = results.filter((r) => r.status === "open");
       setRequests(active);
-      setMatchCounts(await getAvailableMatchCounts(active.map((r) => r.id)));
-    } finally {
       setLoading(false);
-    }
-  }, [user]);
+    });
+    return unsub;
+  }, [user, refreshKey]);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
+  const requestIds = useMemo(() => requests.map((r) => r.id).sort().join(","), [requests]);
 
-      // Auto-refresh requests every 5 minutes
-      const interval = setInterval(() => {
-        load();
-      }, 5 * 60 * 1000);
+  useEffect(() => {
+    const ids = requestIds ? requestIds.split(",") : [];
+    const unsubs = ids.map((id) =>
+      subscribeToRequestMatchCount(id, (count) => {
+        setMatchCounts((prev) => ({ ...prev, [id]: count }));
+      })
+    );
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [requestIds]);
 
-      return () => clearInterval(interval);
-    }, [load])
-  );
+  const load = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const totalMatches = useMemo(
     () => Object.values(matchCounts).reduce((sum, n) => sum + n, 0),
