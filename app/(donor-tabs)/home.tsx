@@ -47,8 +47,14 @@ export default function DonorHomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      refreshProfiles();
       loadRequests();
+
+      // Auto-refresh requests every 5 minutes
+      const interval = setInterval(() => {
+        loadRequests();
+      }, 5 * 60 * 1000);
+
+      return () => clearInterval(interval);
     }, [loadRequests])
   );
 

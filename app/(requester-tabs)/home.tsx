@@ -36,6 +36,13 @@ export default function RequesterHomeScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
+
+      // Auto-refresh requests every 5 minutes
+      const interval = setInterval(() => {
+        load();
+      }, 5 * 60 * 1000);
+
+      return () => clearInterval(interval);
     }, [load])
   );
 
