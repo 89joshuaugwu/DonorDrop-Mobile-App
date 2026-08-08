@@ -17,7 +17,8 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.joshuazaza.donordrop"
+      "bundleIdentifier": "com.joshuazaza.donordrop",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +26,12 @@
         "backgroundColor": "#DC2626"
       },
       "package": "com.joshuazaza.donordrop",
+      "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDbOA6noIEtsrieZCdUsMyN-TPhYfWjKQ4"
+        }
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -53,7 +60,8 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "router": {

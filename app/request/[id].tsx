@@ -2,12 +2,14 @@ import { useCallback, useState } from "react";
 import { View, Text, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Building2, User, Clock } from "lucide-react-native";
+import { Building2, User, Clock, MapPin } from "lucide-react-native";
+import { distanceBetween } from "geofire-common";
 import UrgencyBadge from "@/components/ui/UrgencyBadge";
 import BloodTypeBadge from "@/components/ui/BloodTypeBadge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import DonorResponseRow from "@/components/molecules/DonorResponseRow";
+import RequestMap from "@/components/molecules/RequestMap";
 import { useAuth } from "@/lib/AuthContext";
 import {
   getRequest,
@@ -116,6 +118,11 @@ export default function RequestDetailScreen() {
 
   const availableCount = responses.filter((r) => r.available).length;
 
+  const distanceKm =
+    donorProfile && (request.lat !== 0 || request.lng !== 0) && (donorProfile.lat !== 0 || donorProfile.lng !== 0)
+      ? distanceBetween([request.lat, request.lng], [donorProfile.lat, donorProfile.lng])
+      : null;
+
   return (
     <SafeAreaView className="flex-1 bg-brand-bg" edges={["bottom", "left", "right"]}>
       <ScrollView contentContainerStyle={{ padding: 20 }}>
@@ -138,6 +145,22 @@ export default function RequestDetailScreen() {
             </View>
           </View>
         </Card>
+
+        <RequestMap
+          hospitalName={request.hospitalName}
+          requestLat={request.lat}
+          requestLng={request.lng}
+          viewerLat={donorProfile?.lat}
+          viewerLng={donorProfile?.lng}
+        />
+        {distanceKm !== null && (
+          <View className="flex-row items-center mb-4 -mt-2">
+            <MapPin size={13} color="#64748B" style={{ marginRight: 4 }} />
+            <Text className="text-brand-textsecondary text-xs font-medium">
+              {distanceKm.toFixed(1)} km away from you
+            </Text>
+          </View>
+        )}
 
         <View className="flex-row gap-3 mb-4">
           <Card className="flex-1 items-center py-4">

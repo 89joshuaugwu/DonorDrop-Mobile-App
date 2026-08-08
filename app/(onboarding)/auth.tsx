@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { View, Text, ScrollView, KeyboardAvoidingView, Platform, Alert, Pressable } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -10,7 +10,7 @@ import RoleTag from "@/components/ui/RoleTag";
 import { login, signUp } from "@/lib/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth, fetchUserProfiles } from "@/lib/AuthContext";
-import { useGoogleAuthRequest, signInWithGoogleIdToken } from "@/lib/googleAuth";
+import { signInWithGoogle } from "@/lib/googleAuth";
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -23,8 +23,6 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const { request, response, promptAsync } = useGoogleAuthRequest();
 
   // Routes a freshly-authenticated uid to the right place: straight to
   // that role's home tab if they already have a profile (returning
@@ -60,26 +58,22 @@ export default function AuthScreen() {
     }
   }
 
-  // Fires when the system browser redirects back with a Google result.
-  useEffect(() => {
-    if (response?.type === "success" && response.params.id_token) {
-      (async () => {
-        setGoogleLoading(true);
-        setError("");
-        try {
-          const authedUser = await signInWithGoogleIdToken(response.params.id_token);
-          await routeAfterAuth(authedUser.uid);
-        } catch (err: any) {
-          setError(err?.message?.replace("Firebase: ", "") || "Google sign-in failed. Try again.");
-        } finally {
-          setGoogleLoading(false);
-        }
-      })();
-    } else if (response?.type === "error") {
-      setError("Google sign-in was cancelled or failed.");
+  async function handleGoogleSignIn() {
+    setGoogleLoading(true);
+    setError("");
+    try {
+      const authedUser = await signInWithGoogle();
+      if (authedUser) {
+        await routeAfterAuth(authedUser.uid);
+      }
+      // authedUser === null means the user closed the account picker —
+      // not an error, just stop the spinner and let them try again.
+    } catch (err: any) {
+      setError(err?.message?.replace("Firebase: ", "") || "Google sign-in failed. Try again.");
+    } finally {
+      setGoogleLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [response]);
+  }
 
   async function handleForgotPassword() {
     if (!email.trim()) {
@@ -188,10 +182,9 @@ export default function AuthScreen() {
 
           <Button
             title="Continue with Google"
-            onPress={() => promptAsync()}
+            onPress={handleGoogleSignIn}
             variant="outline"
             loading={googleLoading}
-            disabled={!request}
             pill
           />
 
