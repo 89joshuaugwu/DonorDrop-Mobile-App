@@ -58,6 +58,14 @@ export async function createRequest(input: CreateRequestInput): Promise<string> 
 
   await setDoc(requestRef, requestDoc);
 
+  try {
+    await setDoc(doc(db, "metadata", "requests"), {
+      lastUpdatedAt: new Date().toISOString(),
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Could not update global metadata/requests pulse", err);
+  }
+
   if (ADMIN_API_URL) {
     try {
       await fetch(`${ADMIN_API_URL}/api/requests/notify-matches`, {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, FlatList, RefreshControl, Pressable } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -14,6 +14,8 @@ import { useAuth } from "@/lib/AuthContext";
 import { getNearbyCompatibleRequests } from "@/lib/requests";
 import type { BloodRequest } from "@/types/request";
 import { Droplet } from "lucide-react-native";
+import { onSnapshot, doc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 const URGENCY_RANK: Record<string, number> = { Critical: 0, Urgent: 1, Normal: 2 };
 
@@ -57,6 +59,14 @@ export default function DonorHomeScreen() {
       return () => clearInterval(interval);
     }, [loadRequests])
   );
+
+  // Listen to the global requests pulse to auto-refresh when ANY new request is made
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "metadata", "requests"), () => {
+      loadRequests();
+    });
+    return unsub;
+  }, [loadRequests]);
 
   const sortedRequests = useMemo(() => {
     const copy = [...requests];
