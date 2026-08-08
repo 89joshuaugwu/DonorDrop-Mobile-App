@@ -1,4 +1,8 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
+// @ts-expect-error — getReactNativePersistence exists at runtime in firebase/auth's
+// React Native build, but its type isn't exported from this entry point under the
+// project's module resolution setting. Safe to ignore; if this starts type-checking
+// cleanly on a future firebase upgrade, remove the expect-error.
 import { initializeAuth, getReactNativePersistence, getAuth, Auth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";

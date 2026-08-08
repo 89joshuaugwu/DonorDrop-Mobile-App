@@ -8,6 +8,11 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    // Added in expo-notifications ~0.32: shouldShowAlert is now split into
+    // these two — banner controls the transient heads-up banner, list
+    // controls whether it's added to the notification center/history.
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
