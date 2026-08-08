@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { View, Text, FlatList, RefreshControl, Pressable } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ArrowUpDown } from "lucide-react-native";
+import { ArrowUpDown, RefreshCw } from "lucide-react-native";
 import EligibilityCard from "@/components/ui/EligibilityCard";
 import StatCard from "@/components/ui/StatCard";
 import Avatar from "@/components/ui/Avatar";
@@ -79,9 +79,14 @@ export default function DonorHomeScreen() {
           </Text>
           <RoleTag label="Donor" />
         </View>
-        <Pressable onPress={() => router.push("/(donor-tabs)/profile")}>
-          <Avatar name={donorProfile?.name} size="md" />
-        </Pressable>
+        <View className="flex-row items-center gap-3">
+          <Pressable onPress={() => loadRequests()} className="w-9 h-9 rounded-full bg-white border border-brand-border items-center justify-center">
+            <RefreshCw size={15} color="#0F172A" />
+          </Pressable>
+          <Pressable onPress={() => router.push("/(donor-tabs)/profile")}>
+            <Avatar name={donorProfile?.name} size="md" />
+          </Pressable>
+        </View>
       </View>
 
       <FlatList

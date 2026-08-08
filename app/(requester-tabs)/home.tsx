@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { View, Text, FlatList, RefreshControl, Pressable } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { PlusCircle, Droplet } from "lucide-react-native";
+import { PlusCircle, Droplet, RefreshCw } from "lucide-react-native";
 import Button from "@/components/ui/Button";
 import Avatar from "@/components/ui/Avatar";
 import RoleTag from "@/components/ui/RoleTag";
@@ -60,9 +60,14 @@ export default function RequesterHomeScreen() {
           </Text>
           <RoleTag label="Requester" />
         </View>
-        <Pressable onPress={() => router.push("/(requester-tabs)/profile")}>
-          <Avatar name={requesterProfile?.name} size="md" />
-        </Pressable>
+        <View className="flex-row items-center gap-3">
+          <Pressable onPress={() => load()} className="w-9 h-9 rounded-full bg-white border border-brand-border items-center justify-center">
+            <RefreshCw size={15} color="#0F172A" />
+          </Pressable>
+          <Pressable onPress={() => router.push("/(requester-tabs)/profile")}>
+            <Avatar name={requesterProfile?.name} size="md" />
+          </Pressable>
+        </View>
       </View>
 
       <FlatList
