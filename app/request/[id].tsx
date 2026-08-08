@@ -1,6 +1,6 @@
-import { useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, ScrollView, ActivityIndicator, Alert } from "react-native";
-import { useLocalSearchParams, useFocusEffect } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Building2, User, Clock, MapPin } from "lucide-react-native";
 import { distanceBetween } from "geofire-common";
@@ -12,9 +12,9 @@ import DonorResponseRow from "@/components/molecules/DonorResponseRow";
 import RequestMap from "@/components/molecules/RequestMap";
 import { useAuth } from "@/lib/AuthContext";
 import {
-  getRequest,
-  getRequestResponses,
-  getMyResponse,
+  subscribeToRequest,
+  subscribeToRequestResponses,
+  subscribeToMyResponse,
   respondToRequest,
   markRequestFulfilled,
 } from "@/lib/requests";
@@ -36,39 +36,42 @@ export default function RequestDetailScreen() {
   const [request, setRequest] = useState<BloodRequest | null>(null);
   const [responses, setResponses] = useState<RequestResponse[]>([]);
   const [myResponse, setMyResponse] = useState<RequestResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  // Live subscription to the request doc itself — status changes
+  // (fulfilled, etc.) show up instantly without any manual reload.
+  useEffect(() => {
     if (!id) return;
-    setLoading(true);
-    try {
-      const r = await getRequest(id);
+    const unsub = subscribeToRequest(id, (r) => {
       setRequest(r);
+      setInitialLoading(false);
+    });
+    return unsub;
+  }, [id]);
 
-      // Only the requester who owns this request can see the full
-      // response list (donor phone numbers) — this is also enforced at
-      // the Firestore rule level, not just here in the UI.
-      if (r && requesterProfile && r.requesterUid === user?.uid) {
-        const resp = await getRequestResponses(id);
-        setResponses(resp);
-      }
-      if (donorProfile && user) {
-        const mine = await getMyResponse(id, user.uid);
-        setMyResponse(mine);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [id, user, donorProfile, requesterProfile]);
+  // Live subscription to a donor's own response — only meaningful once
+  // we know the signed-in person has a donor profile.
+  useEffect(() => {
+    if (!id || !user || !donorProfile) return;
+    const unsub = subscribeToMyResponse(id, user.uid, setMyResponse);
+    return unsub;
+  }, [id, user, donorProfile]);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
-
+  // Live subscription to the full responses list — ONLY set up once we
+  // know from the request doc that the signed-in user is the owner
+  // (matches the Firestore rule: the /responses subcollection is only
+  // readable as a list by the request's own requesterUid).
   const isOwnerRequester = !!(request && user && request.requesterUid === user.uid);
+  useEffect(() => {
+    if (!id || !isOwnerRequester) {
+      setResponses([]);
+      return;
+    }
+    const unsub = subscribeToRequestResponses(id, setResponses);
+    return unsub;
+  }, [id, isOwnerRequester]);
+
   const canRespondAsDonor = !!(donorProfile && request && !isOwnerRequester);
 
   async function handleRespond(available: boolean) {
@@ -77,13 +80,16 @@ export default function RequestDetailScreen() {
     try {
       await respondToRequest(
         request.id,
+        request.requesterUid,
         user.uid,
         donorProfile.name,
         donorProfile.phone,
         donorProfile.bloodType,
-        available
+        available,
+        request.hospitalName
       );
-      await load();
+      // No manual reload needed — subscribeToMyResponse picks this up
+      // on its own the moment Firestore confirms the write.
     } finally {
       setBusy(false);
     }
@@ -99,7 +105,7 @@ export default function RequestDetailScreen() {
           setBusy(true);
           try {
             await markRequestFulfilled(request.id);
-            await load();
+            // subscribeToRequest picks up the status change on its own.
           } finally {
             setBusy(false);
           }
@@ -108,7 +114,13 @@ export default function RequestDetailScreen() {
     ]);
   }
 
-  if (loading || !request) {
+  // Only the VERY FIRST load shows a full-screen spinner. Every update
+  // after that (a new response coming in, status changing, etc.) patches
+  // the screen in place — this is what actually fixes the "keeps
+  // refreshing" flicker: the old version re-showed this spinner (and
+  // unmounted the whole screen, including the map) on every single
+  // useFocusEffect-triggered refetch.
+  if (initialLoading || !request) {
     return (
       <SafeAreaView className="flex-1 items-center justify-center bg-brand-bg">
         <ActivityIndicator size="large" color="#DC2626" />

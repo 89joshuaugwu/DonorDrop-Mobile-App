@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   setDoc,
+  addDoc,
   getDoc,
   getDocs,
   updateDoc,
@@ -86,14 +87,29 @@ export async function createRequest(input: CreateRequestInput): Promise<string> 
   return requestRef.id;
 }
 
-/** Donor responds "Available" or "Can't help right now" to a request. */
+/**
+ * Donor responds "Available" or "Can't help right now" to a request.
+ *
+ * Also writes a notification doc for the REQUESTER when the donor says
+ * they're available — this is the piece that was missing. Request
+ * creation already notifies donors (via the notify-matches admin API
+ * call in createRequest above), but nothing previously told the
+ * requester when a donor actually responded, so their Notifications tab
+ * had no way to ever show anything. This write only covers the in-app
+ * Firestore-backed notification list — it does NOT send an OS push
+ * notification to the requester's phone, since that needs the
+ * firebase-admin SDK / FCM V1 credentials that only exist server-side
+ * in donordrop-admin, not in this client app.
+ */
 export async function respondToRequest(
   requestId: string,
+  requesterUid: string,
   donorUid: string,
   donorName: string,
   donorPhone: string,
   donorBloodType: BloodType,
-  available: boolean
+  available: boolean,
+  hospitalName?: string
 ): Promise<void> {
   const responseRef = doc(db, "requests", requestId, "responses", donorUid);
   const response: RequestResponse = {
@@ -105,6 +121,27 @@ export async function respondToRequest(
     respondedAt: new Date().toISOString(),
   };
   await setDoc(responseRef, response);
+
+  if (available) {
+    try {
+      await addDoc(collection(db, "notifications", requesterUid, "items"), {
+        requestId,
+        title: "A donor is available",
+        body: `${donorName} (${donorBloodType}) can help with your request${
+          hospitalName ? ` at ${hospitalName}` : ""
+        }.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      // Response is already saved even if this write fails — the
+      // requester just won't see an in-app notification for it. Their
+      // "Donor Matches" stat (subscribeToRequestMatchCount) still
+      // updates live regardless, since that reads the responses
+      // subcollection directly rather than depending on this doc.
+      console.warn("Could not write requester notification", err);
+    }
+  }
 }
 
 export async function markRequestFulfilled(requestId: string): Promise<void> {
@@ -143,6 +180,48 @@ export async function getMyResponse(
 ): Promise<RequestResponse | null> {
   const snap = await getDoc(doc(db, "requests", requestId, "responses", donorUid));
   return snap.exists() ? (snap.data() as RequestResponse) : null;
+}
+
+/**
+ * Real-time single-request subscriptions, used by the request detail
+ * screen. These replace the old one-shot getRequest/getRequestResponses/
+ * getMyResponse + useFocusEffect(load) pattern that screen used to use —
+ * that pattern re-fetched (and briefly unmounted the whole screen behind
+ * a full-screen spinner) every time the screen regained focus or after
+ * every write, which is what caused the "keeps refreshing" flicker.
+ * Subscribing once on mount and letting Firestore push updates in place
+ * removes that class of bug entirely, and matches the same live pattern
+ * already used for the home/my-requests screens.
+ */
+export function subscribeToRequest(
+  requestId: string,
+  onUpdate: (request: BloodRequest | null) => void
+): () => void {
+  return onSnapshot(doc(db, "requests", requestId), (snap) => {
+    onUpdate(snap.exists() ? ({ id: snap.id, ...snap.data() } as BloodRequest) : null);
+  });
+}
+
+/** Owner-only — same Firestore rule constraint as getRequestResponses. */
+export function subscribeToRequestResponses(
+  requestId: string,
+  onUpdate: (responses: RequestResponse[]) => void
+): () => void {
+  const q = query(collection(db, "requests", requestId, "responses"), orderBy("respondedAt", "desc"));
+  return onSnapshot(q, (snap) => {
+    onUpdate(snap.docs.map((d) => d.data() as RequestResponse));
+  });
+}
+
+/** A donor's own response doc — same Firestore rule constraint as getMyResponse. */
+export function subscribeToMyResponse(
+  requestId: string,
+  donorUid: string,
+  onUpdate: (response: RequestResponse | null) => void
+): () => void {
+  return onSnapshot(doc(db, "requests", requestId, "responses", donorUid), (snap) => {
+    onUpdate(snap.exists() ? (snap.data() as RequestResponse) : null);
+  });
 }
 
 /**
@@ -299,7 +378,7 @@ export function subscribeToNearbyCompatibleRequests(
       if (initialLoadsRemaining > 0) {
         initialLoadsRemaining--;
       }
-      
+
       emitUpdate();
     });
   });
