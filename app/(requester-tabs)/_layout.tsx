@@ -7,7 +7,14 @@ export default function RequesterTabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: "#DC2626",
-        tabBarInactiveTintColor: "#64748B",
+        tabBarInactiveTintColor: "#94A3B8",
+        tabBarLabelStyle: { fontSize: 10.5, fontWeight: "600" },
+        tabBarStyle: {
+          borderTopColor: "#E2E8F0",
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
       }}
     >
       <Tabs.Screen
@@ -17,7 +24,7 @@ export default function RequesterTabsLayout() {
       <Tabs.Screen
         name="post-request"
         options={{
-          title: "Post Request",
+          title: "Post",
           tabBarIcon: ({ color, size }) => <PlusCircle color={color} size={size} />,
         }}
       />
@@ -31,7 +38,7 @@ export default function RequesterTabsLayout() {
       <Tabs.Screen
         name="notifications"
         options={{
-          title: "Notifications",
+          title: "Alerts",
           tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
         }}
       />

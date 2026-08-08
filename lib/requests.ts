@@ -136,6 +136,24 @@ export async function getMyResponse(
   return snap.exists() ? (snap.data() as RequestResponse) : null;
 }
 
+/**
+ * For a set of requests the current user owns, returns how many donors
+ * responded "available" on each — used for the "Donor Matches" stat and
+ * per-card match counts on the requester's My Requests screen. Only
+ * works for requests the caller owns (same rule constraint as
+ * getRequestResponses), so only call this with the signed-in
+ * requester's own request IDs.
+ */
+export async function getAvailableMatchCounts(requestIds: string[]): Promise<Record<string, number>> {
+  const entries = await Promise.all(
+    requestIds.map(async (id) => {
+      const responses = await getRequestResponses(id);
+      return [id, responses.filter((r) => r.available).length] as const;
+    })
+  );
+  return Object.fromEntries(entries);
+}
+
 export async function getMyRequests(requesterUid: string): Promise<BloodRequest[]> {
   const snap = await getDocs(
     query(

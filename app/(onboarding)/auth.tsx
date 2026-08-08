@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { View, Text, ScrollView, KeyboardAvoidingView, Platform, Alert, Pressable } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { sendPasswordResetEmail } from "firebase/auth";
+import { Droplet, Mail, Lock } from "lucide-react-native";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import RoleTag from "@/components/ui/RoleTag";
 import { login, signUp } from "@/lib/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth, fetchUserProfiles } from "@/lib/AuthContext";
@@ -103,15 +105,48 @@ export default function AuthScreen() {
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
       >
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}>
-          <Text className="text-2xl font-extrabold text-brand-text mb-1">
-            {mode === "signup" ? "Create your account" : "Welcome back"}
-          </Text>
-          <Text className="text-brand-textsecondary mb-6">
-            {role === "requester" ? "Signing up as a requester" : "Signing up as a donor"}
-          </Text>
+          <View className="items-center mb-6">
+            <View className="w-14 h-14 rounded-2xl bg-brand-red items-center justify-center mb-3">
+              <Droplet size={26} color="#FFFFFF" fill="#FFFFFF" />
+            </View>
+            <Text className="text-2xl font-extrabold text-brand-text">Join DonorDrop</Text>
+            <Text className="text-brand-textsecondary text-center mt-1">
+              Life is a heartbeat away.
+            </Text>
+            <RoleTag label={role === "requester" ? "Requester" : "Donor"} />
+          </View>
+
+          <View className="flex-row bg-slate-100 rounded-2xl p-1 mb-6">
+            {(["signup", "login"] as const).map((m) => (
+              <Pressable
+                key={m}
+                onPress={() => {
+                  setMode(m);
+                  setError("");
+                }}
+                className={`flex-1 py-2.5 rounded-xl items-center ${mode === m ? "bg-white" : ""}`}
+                style={
+                  mode === m
+                    ? {
+                        shadowColor: "#0F172A",
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.08,
+                        shadowRadius: 3,
+                        elevation: 1,
+                      }
+                    : undefined
+                }
+              >
+                <Text className={`font-semibold ${mode === m ? "text-brand-text" : "text-brand-textsecondary"}`}>
+                  {m === "signup" ? "Sign up" : "Log in"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
 
           <Input
             label="Email"
+            icon={Mail}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -120,6 +155,7 @@ export default function AuthScreen() {
           />
           <Input
             label="Password"
+            icon={Lock}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -129,7 +165,7 @@ export default function AuthScreen() {
           {mode === "login" && (
             <Text
               onPress={handleForgotPassword}
-              className="text-brand-red text-sm font-medium mb-4 -mt-2"
+              className="text-brand-red text-sm font-medium mb-4 -mt-2 self-end"
             >
               Forgot password?
             </Text>
@@ -141,6 +177,7 @@ export default function AuthScreen() {
             title={mode === "signup" ? "Sign up" : "Log in"}
             onPress={handleSubmit}
             loading={loading}
+            pill
           />
 
           <View className="flex-row items-center my-5">
@@ -155,6 +192,7 @@ export default function AuthScreen() {
             variant="outline"
             loading={googleLoading}
             disabled={!request}
+            pill
           />
 
           <View className="mt-3">
@@ -164,7 +202,8 @@ export default function AuthScreen() {
                 setMode(mode === "signup" ? "login" : "signup");
                 setError("");
               }}
-              variant="secondary"
+              variant="ghost"
+              pill
             />
           </View>
         </ScrollView>

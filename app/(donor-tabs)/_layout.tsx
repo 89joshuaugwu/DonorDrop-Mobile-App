@@ -7,7 +7,14 @@ export default function DonorTabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: "#DC2626",
-        tabBarInactiveTintColor: "#64748B",
+        tabBarInactiveTintColor: "#94A3B8",
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarStyle: {
+          borderTopColor: "#E2E8F0",
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
       }}
     >
       <Tabs.Screen

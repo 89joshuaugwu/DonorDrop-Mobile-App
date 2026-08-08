@@ -8,10 +8,13 @@ module.exports = {
         brand: {
           red: "#DC2626",
           reddark: "#991B1B",
+          redtint: "#FEF2F2",
+          redtint2: "#FFE4E6",
           critical: "#DC2626",
           urgent: "#EA580C",
           normal: "#2563EB",
           success: "#16A34A",
+          successtint: "#F0FDF4",
           slate: "#64748B",
           bg: "#F8FAFC",
           border: "#E2E8F0",

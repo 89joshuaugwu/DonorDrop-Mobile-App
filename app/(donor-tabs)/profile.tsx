@@ -1,23 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
-import { View, Text, ScrollView, Switch, Alert } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { View, Text, ScrollView, Switch } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { collection, query, where, orderBy, getDocs, doc, updateDoc } from "firebase/firestore";
+import { BadgeCheck } from "lucide-react-native";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthContext";
 import { logDonation } from "@/lib/donations";
 import { registerForPushNotifications } from "@/lib/push";
 import { logout } from "@/lib/auth";
-import BloodTypeBadge from "@/components/ui/BloodTypeBadge";
+import Avatar from "@/components/ui/Avatar";
+import RoleTag from "@/components/ui/RoleTag";
+import StatCard from "@/components/ui/StatCard";
+import SectionHeader from "@/components/ui/SectionHeader";
+import Card from "@/components/ui/Card";
 import DonationHistoryItem from "@/components/molecules/DonationHistoryItem";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import type { Donation } from "@/types/donation";
 
+const LIVES_PER_DONATION = 3;
+const HISTORY_PREVIEW_COUNT = 3;
+
 export default function DonorProfileScreen() {
   const { user, donorProfile, refreshProfiles } = useAuth();
   const [donations, setDonations] = useState<Donation[]>([]);
   const [showLogForm, setShowLogForm] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [location, setLocation] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -62,21 +71,36 @@ export default function DonorProfileScreen() {
     await refreshProfiles();
   }
 
+  const visibleDonations = useMemo(
+    () => (showAllHistory ? donations : donations.slice(0, HISTORY_PREVIEW_COUNT)),
+    [donations, showAllHistory]
+  );
+
   if (!donorProfile) return null;
+
+  const totalDonations = donorProfile.totalDonations ?? 0;
 
   return (
     <SafeAreaView className="flex-1 bg-brand-bg">
       <ScrollView contentContainerStyle={{ padding: 20 }}>
         <View className="items-center mb-6">
-          <BloodTypeBadge bloodType={donorProfile.bloodType} size="lg" />
-          <Text className="text-xl font-extrabold text-brand-text mt-3">{donorProfile.name}</Text>
+          <Avatar name={donorProfile.name} size="lg" />
+          <View className="flex-row items-center mt-3">
+            <Text className="text-xl font-extrabold text-brand-text">{donorProfile.name}</Text>
+            {donorProfile.verified && (
+              <BadgeCheck size={18} color="#2563EB" style={{ marginLeft: 6 }} />
+            )}
+          </View>
           <Text className="text-brand-textsecondary">{donorProfile.phone}</Text>
-          <Text className="text-brand-textsecondary mt-1">
-            {donorProfile.totalDonations} total donation{donorProfile.totalDonations === 1 ? "" : "s"}
-          </Text>
+          <RoleTag label={`${donorProfile.bloodType} Donor`} />
         </View>
 
-        <View className="bg-white border border-brand-border rounded-2xl p-4 mb-4 flex-row items-center justify-between">
+        <View className="flex-row gap-3 mb-4">
+          <StatCard label="Total Donations" value={totalDonations} />
+          <StatCard label="Lives Saved" value={totalDonations * LIVES_PER_DONATION} />
+        </View>
+
+        <Card className="mb-4 flex-row items-center justify-between">
           <View className="flex-1 pr-3">
             <Text className="font-semibold text-brand-text">Show me in nearby donor searches</Text>
             <Text className="text-brand-textsecondary text-sm mt-0.5">
@@ -88,31 +112,43 @@ export default function DonorProfileScreen() {
             onValueChange={handleToggleVisibility}
             trackColor={{ false: "#E2E8F0", true: "#DC2626" }}
           />
-        </View>
+        </Card>
 
         {!showLogForm ? (
-          <Button title="Log a Donation" onPress={() => setShowLogForm(true)} variant="primary" />
+          <Button title="Log a Donation" onPress={() => setShowLogForm(true)} variant="primary" pill />
         ) : (
-          <View className="bg-white border border-brand-border rounded-2xl p-4 mb-2">
+          <Card className="mb-2">
             <Input
               label="Where did you donate?"
               value={location}
               onChangeText={setLocation}
               placeholder="e.g. UNTH Blood Bank"
             />
-            <Button title="Save Donation" onPress={handleLogDonation} loading={saving} />
-          </View>
+            <Button title="Save Donation" onPress={handleLogDonation} loading={saving} pill />
+          </Card>
         )}
 
-        <Text className="font-bold text-brand-text mt-6 mb-2">Donation History</Text>
-        {donations.length === 0 ? (
-          <Text className="text-brand-textsecondary">You haven't logged a donation yet.</Text>
-        ) : (
-          donations.map((d) => <DonationHistoryItem key={d.id} donation={d} />)
-        )}
+        <View className="mt-6">
+          <SectionHeader
+            title="Donation History"
+            actionLabel={
+              donations.length > HISTORY_PREVIEW_COUNT ? (showAllHistory ? "Show Less" : "View All") : undefined
+            }
+            onAction={() => setShowAllHistory((v) => !v)}
+          />
+          {donations.length === 0 ? (
+            <Text className="text-brand-textsecondary">You haven't logged a donation yet.</Text>
+          ) : (
+            <Card>
+              {visibleDonations.map((d) => (
+                <DonationHistoryItem key={d.id} donation={d} />
+              ))}
+            </Card>
+          )}
+        </View>
 
         <View className="mt-8">
-          <Button title="Log Out" onPress={() => logout()} variant="danger" />
+          <Button title="Log Out" onPress={() => logout()} variant="danger" pill />
         </View>
       </ScrollView>
     </SafeAreaView>

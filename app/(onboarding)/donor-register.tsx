@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, KeyboardAvoidingView, Platform } fro
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
-import { MapPin, Bell, Droplet } from "lucide-react-native";
+import { MapPin, Bell, Droplet, User, Phone } from "lucide-react-native";
 import { doc, setDoc } from "firebase/firestore";
 import { geohashForLocation } from "geofire-common";
 import { db } from "@/lib/firebase";
@@ -17,6 +17,21 @@ import type { BloodType, Donor } from "@/types/donor";
 const BLOOD_TYPES: BloodType[] = ["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"];
 
 type Step = "details" | "location" | "notifications" | "saving";
+const STEP_ORDER: Step[] = ["details", "location", "notifications"];
+
+function StepDots({ step }: { step: Step }) {
+  const index = STEP_ORDER.indexOf(step);
+  return (
+    <View className="flex-row justify-center mb-6 gap-1.5">
+      {STEP_ORDER.map((s, i) => (
+        <View
+          key={s}
+          className={`h-1.5 rounded-full ${i === index ? "w-6 bg-brand-red" : "w-1.5 bg-brand-border"}`}
+        />
+      ))}
+    </View>
+  );
+}
 
 export default function DonorRegisterScreen() {
   const router = useRouter();
@@ -90,15 +105,18 @@ export default function DonorRegisterScreen() {
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
       >
       <ScrollView contentContainerStyle={{ padding: 24, flexGrow: 1 }}>
+        {step !== "saving" && <StepDots step={step} />}
+
         {step === "details" && (
           <>
-            <Text className="text-2xl font-extrabold text-brand-text mb-1">Donor Details</Text>
-            <Text className="text-brand-textsecondary mb-6">
+            <Text className="text-2xl font-extrabold text-brand-text mb-1 text-center">Donor Details</Text>
+            <Text className="text-brand-textsecondary mb-6 text-center">
               Tell us a bit about you so we can match you to requests.
             </Text>
-            <Input label="Full Name" value={name} onChangeText={setName} placeholder="Chidinma Okafor" />
+            <Input label="Full Name" icon={User} value={name} onChangeText={setName} placeholder="Chidinma Okafor" />
             <Input
               label="Phone Number"
+              icon={Phone}
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"
@@ -110,7 +128,7 @@ export default function DonorRegisterScreen() {
                 <Pressable
                   key={bt}
                   onPress={() => setBloodType(bt)}
-                  className={`w-16 h-16 rounded-xl items-center justify-center border-2 ${
+                  className={`w-16 h-16 rounded-2xl items-center justify-center border-2 ${
                     bloodType === bt ? "bg-brand-red border-brand-red" : "bg-white border-brand-border"
                   }`}
                 >
@@ -120,14 +138,14 @@ export default function DonorRegisterScreen() {
                 </Pressable>
               ))}
             </View>
-            <Button title="Continue" onPress={handleDetailsNext} />
+            <Button title="Continue" onPress={handleDetailsNext} pill />
           </>
         )}
 
         {step === "location" && (
           <View className="flex-1 justify-center">
             <PermissionPrompt
-              icon={<MapPin size={40} color="#DC2626" />}
+              icon={<MapPin size={34} color="#DC2626" />}
               title="Enable Location"
               message="DonorDrop needs your location to match you with blood requests near you. Your exact location is never shown to requesters — only approximate distance."
               onAllow={handleAllowLocation}
@@ -140,7 +158,7 @@ export default function DonorRegisterScreen() {
         {step === "notifications" && (
           <View className="flex-1 justify-center">
             <PermissionPrompt
-              icon={<Bell size={40} color="#DC2626" />}
+              icon={<Bell size={34} color="#DC2626" />}
               title="Enable Notifications"
               message="Get notified instantly when someone nearby needs your blood type. This is how DonorDrop reaches you for urgent requests."
               onAllow={handleAllowNotifications}
@@ -152,8 +170,10 @@ export default function DonorRegisterScreen() {
 
         {step === "saving" && (
           <View className="flex-1 items-center justify-center">
-            <Droplet size={40} color="#DC2626" />
-            <Text className="text-brand-textsecondary mt-3">Setting up your profile...</Text>
+            <View className="w-16 h-16 rounded-full bg-brand-redtint items-center justify-center mb-3">
+              <Droplet size={28} color="#DC2626" fill="#DC2626" />
+            </View>
+            <Text className="text-brand-textsecondary">Setting up your profile...</Text>
           </View>
         )}
       </ScrollView>

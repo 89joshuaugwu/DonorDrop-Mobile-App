@@ -2,9 +2,11 @@ import { useCallback, useState } from "react";
 import { View, Text, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { useLocalSearchParams, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Building2, User, Clock } from "lucide-react-native";
 import UrgencyBadge from "@/components/ui/UrgencyBadge";
 import BloodTypeBadge from "@/components/ui/BloodTypeBadge";
 import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
 import DonorResponseRow from "@/components/molecules/DonorResponseRow";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -15,6 +17,15 @@ import {
   markRequestFulfilled,
 } from "@/lib/requests";
 import type { BloodRequest, RequestResponse } from "@/types/request";
+
+function timeAgo(iso: string) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  if (hours < 1) return "Posted just now";
+  if (hours < 24) return `Posted ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `Posted ${days} day${days === 1 ? "" : "s"} ago`;
+}
 
 export default function RequestDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -103,31 +114,54 @@ export default function RequestDetailScreen() {
     );
   }
 
+  const availableCount = responses.filter((r) => r.available).length;
+
   return (
-    <SafeAreaView className="flex-1 bg-brand-bg">
+    <SafeAreaView className="flex-1 bg-brand-bg" edges={["bottom", "left", "right"]}>
       <ScrollView contentContainerStyle={{ padding: 20 }}>
-        <View className="flex-row items-center mb-4">
-          <BloodTypeBadge bloodType={request.bloodTypeNeeded} size="lg" />
-          <View className="ml-4 flex-1">
-            <Text className="text-lg font-extrabold text-brand-text">{request.hospitalName}</Text>
-            <Text className="text-brand-textsecondary">
-              {request.units} unit{request.units === 1 ? "" : "s"} needed
-            </Text>
-            <View className="mt-1 self-start">
-              <UrgencyBadge urgency={request.urgency} />
+        <Card elevated className="mb-4">
+          <View className="flex-row items-center justify-between mb-4">
+            <UrgencyBadge urgency={request.urgency} />
+            <Text className="text-brand-textsecondary text-xs">{timeAgo(request.createdAt)}</Text>
+          </View>
+
+          <View className="flex-row items-center">
+            <BloodTypeBadge bloodType={request.bloodTypeNeeded} size="lg" />
+            <View className="ml-4 flex-1">
+              <Text className="text-lg font-extrabold text-brand-text">{request.hospitalName}</Text>
+              <Text className="text-brand-textsecondary">
+                {request.units} unit{request.units === 1 ? "" : "s"} needed
+              </Text>
+              <Text className="text-brand-textsecondary text-xs mt-1 capitalize">
+                Status: <Text className="font-bold text-brand-text">{request.status}</Text>
+              </Text>
             </View>
           </View>
+        </Card>
+
+        <View className="flex-row gap-3 mb-4">
+          <Card className="flex-1 items-center py-4">
+            <Building2 size={18} color="#DC2626" style={{ marginBottom: 6 }} />
+            <Text className="text-brand-textsecondary text-xs">Hospital</Text>
+            <Text className="font-bold text-brand-text text-sm text-center mt-0.5" numberOfLines={1}>
+              {request.hospitalName}
+            </Text>
+          </Card>
+          <Card className="flex-1 items-center py-4">
+            <User size={18} color="#DC2626" style={{ marginBottom: 6 }} />
+            <Text className="text-brand-textsecondary text-xs">Requester</Text>
+            <Text className="font-bold text-brand-text text-sm text-center mt-0.5" numberOfLines={1}>
+              {request.requesterName}
+            </Text>
+          </Card>
         </View>
 
         {!!request.notes && (
-          <View className="bg-white border border-brand-border rounded-2xl p-4 mb-4">
-            <Text className="text-brand-textsecondary text-sm">{request.notes}</Text>
-          </View>
+          <Card className="mb-4">
+            <Text className="text-xs font-semibold text-brand-textsecondary mb-1.5">Additional Notes</Text>
+            <Text className="text-brand-text text-sm leading-5">{request.notes}</Text>
+          </Card>
         )}
-
-        <Text className="text-brand-textsecondary text-sm mb-4">
-          Status: <Text className="font-bold text-brand-text capitalize">{request.status}</Text>
-        </Text>
 
         {canRespondAsDonor && request.status === "open" && (
           <View className="flex-row gap-3 mb-6">
@@ -137,6 +171,7 @@ export default function RequestDetailScreen() {
                 onPress={() => handleRespond(true)}
                 loading={busy}
                 variant={myResponse?.available ? "secondary" : "primary"}
+                pill
               />
             </View>
             <View className="flex-1">
@@ -145,6 +180,7 @@ export default function RequestDetailScreen() {
                 onPress={() => handleRespond(false)}
                 loading={busy}
                 variant="outline"
+                pill
               />
             </View>
           </View>
@@ -152,20 +188,26 @@ export default function RequestDetailScreen() {
 
         {isOwnerRequester && (
           <>
-            <Text className="font-bold text-brand-text mb-2">
-              Responses ({responses.length})
-            </Text>
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="font-bold text-brand-text">Responses ({responses.length})</Text>
+              {availableCount > 0 && (
+                <Text className="text-brand-success text-xs font-bold">{availableCount} available</Text>
+              )}
+            </View>
             {responses.length === 0 ? (
-              <Text className="text-brand-textsecondary mb-6">No donors have responded yet.</Text>
+              <Card className="mb-6 items-center py-8">
+                <Clock size={22} color="#94A3B8" style={{ marginBottom: 8 }} />
+                <Text className="text-brand-textsecondary">No donors have responded yet.</Text>
+              </Card>
             ) : (
-              <View className="bg-white border border-brand-border rounded-2xl px-4 mb-6">
+              <Card className="px-4 mb-6">
                 {responses.map((r) => (
                   <DonorResponseRow key={r.donorUid} response={r} />
                 ))}
-              </View>
+              </Card>
             )}
             {request.status === "open" && (
-              <Button title="Mark as Fulfilled" onPress={handleMarkFulfilled} variant="secondary" />
+              <Button title="Mark as Fulfilled" onPress={handleMarkFulfilled} variant="secondary" pill />
             )}
           </>
         )}
