@@ -33,6 +33,7 @@
     "nativewind": "^4.0.36",
     "react": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-maps": "1.20.1",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
@@ -45,8 +46,5 @@
     "@types/react": "~19.1.10",
     "typescript": "^5.5.4"
   },
-  "private": true,
-  "allowScripts": {
-    "protobufjs@7.6.5": true
-  }
+  "private": true
 }
