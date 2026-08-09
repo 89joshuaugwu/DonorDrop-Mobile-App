@@ -47,51 +47,93 @@ whenever `createRequest` runs (`lib/requests.ts`). That backend has
 real push notifications — this mobile app deliberately does **not** hold
 those credentials (they shouldn't ship in a client app).
 
-**This is the part I can't fully verify from this repo.** I can see this
-app *calls* that endpoint, but I don't have the `donordrop-admin` source
-to confirm what that endpoint actually does once called. Two things are
-both plausible and look identical from this app's side:
-- It sends an OS push notification **and** writes a matching doc to
-  `/notifications/{donorUid}/items`, in which case both the phone banner
-  and the in-app Notifications tab work.
-- It **only** sends the OS push notification via Expo's push API, with
-  no Firestore write, in which case donors would see banners but their
-  in-app Notifications tab would stay permanently empty — "All caught
-  up!" even when they've actually been pushed to before.
+**Confirmed from the `donordrop-admin` source** (`lib/push.ts`'s
+`notifyMatchingDonors`): it does both — writes an in-app notification
+doc for every matched donor via a Firestore batch write, THEN fans out
+Expo push messages to whichever of those donors have a `pushToken`. The
+notification doc write happens first and unconditionally (not gated on
+the push succeeding), so even a donor who's denied notification
+permission, or whose push token is stale, still gets the in-app list
+entry. If donor notifications still aren't appearing after all this,
+the code path itself isn't the problem — check, in order:
+1. **Is `donordrop-admin` actually deployed**, and does
+   `EXPO_PUBLIC_ADMIN_API_URL` in the mobile app's `.env` point at that
+   live URL (not `localhost`)? `createRequest`'s call to this endpoint
+   is wrapped in try/catch and only logs a warning on failure — a
+   misconfigured or undeployed backend fails completely silently from
+   the mobile app's side.
+2. **Are the three `FIREBASE_ADMIN_*` env vars set on Vercel**
+   (`FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`,
+   `FIREBASE_ADMIN_PRIVATE_KEY`)? These come from a Firebase Admin SDK
+   service account JSON (Firebase Console → Project Settings → Service
+   accounts → Generate new private key) — likely the same file already
+   used for the FCM V1 credentials uploaded to EAS, since both just need
+   a Firebase Admin-scoped service account. `firebase-admin.ts` throws
+   immediately if any of the three are missing, which surfaces as a 500
+   from the endpoint.
+3. **Does the test donor actually match?** `findNearbyDonors` requires
+   `isVisible == true`, a compatible blood type, and within the request's
+   15km radius — zero matches is correct (not a bug) if the test account
+   doesn't satisfy all three.
 
-**To check:** either look at the `notify-matches` handler in the
-`donordrop-admin` repo directly, or empirically — post a test request as
-a requester, then as a compatible nearby donor, check both (a) whether a
-push banner arrived and (b) whether anything shows in that donor's
-in-app Notifications tab. If (a) works and (b) doesn't, that confirms
-the handler needs a Firestore write added alongside its existing push
-call. Happy to add that server-side write if you share that handler's
-code.
+**Fastest way to isolate which of these it is**: call the deployed
+endpoint directly (bypassing the mobile app entirely) with a real
+request ID:
+```
+curl -X POST https://<your-vercel-url>/api/requests/notify-matches \
+  -H "Content-Type: application/json" \
+  -d '{"requestId":"<a real request id from Firestore>"}'
+```
+The response includes `matchedDonors` and `pushNotificationsSent` counts
+directly — `matchedDonors: 0` points at #3 above, a non-2xx response or
+connection failure points at #1/#2.
 
 **Requester notifications** (a donor responded "available" to their
-request): this was a real gap, now fixed client-side. Previously nothing
-ever wrote to a requester's notification list at all — the
-`respondToRequest` function only wrote the response doc itself, so the
-requester's Notifications tab was guaranteed to always be empty
-regardless of the admin backend. `lib/requests.ts#respondToRequest` now
-also writes a notification doc for the requester when a donor marks
-themselves available (not for "can't help" responses — only genuine
-matches). **This write is Firestore-only — it does not send an OS push
-notification to the requester's phone**, since sending a real push needs
-the same FCM V1 admin-SDK credentials mentioned above, which only exist
-server-side. If you want requesters to get an actual phone banner (not
-just an in-app list entry) when a donor responds, that needs a small
-addition to `donordrop-admin` — a new endpoint this app calls from
-`respondToRequest`, mirroring how `notify-matches` already works for the
-donor side.
+request): this was a real gap, and the first fix for it was wrong —
+worth documenting why, since the same mistake is easy to repeat.
+`respondToRequest` originally tried to `addDoc` directly into
+`/notifications/{requesterUid}/items` from the donor's own client SDK
+session. `firestore.rules` has `allow write: if false` on that path —
+**server-side only, via firebase-admin** — for exactly the reason you'd
+guess: a donor's client has no business writing directly into a
+different user's data. That write was always silently rejected (caught
+by a try/catch, which is why it failed quietly instead of throwing
+somewhere visible).
+
+**Current fix**: `respondToRequest` now calls a new
+`donordrop-admin` endpoint, `/api/requests/notify-requester`
+(`app/api/requests/notify-requester/route.ts` in that repo), mirroring
+`notify-matches`'s existing shape almost exactly — looks up the request
+server-side to get `requesterUid` (never trusts the client to declare
+whose notifications collection to write to), and writes the notification
+via `firebase-admin`, which bypasses the client rule entirely because
+it's not going through client Firestore access at all. **This is
+Firestore-only, still no OS push** — an actual phone banner would need
+requesters to hold a push token too, which they currently don't
+(`RequesterProfile` has no `pushToken` field, and there's no push
+registration flow for requesters — only donors register for push
+today). That's a legitimate future addition if requesters should get
+real push, not just an in-app list entry.
 
 ## Quick verification checklist
 
 - [ ] Donor in-app Notifications tab populates after a compatible
-      request is posted nearby (confirms the admin backend writes
-      Firestore, not just push)
+      request is posted nearby
 - [ ] Donor gets an actual phone push banner for the same event
 - [ ] Requester in-app Notifications tab populates after a donor
-      responds "available" (should work now — this app's own write)
+      responds "available" (goes through notify-requester now, not a
+      direct client write)
 - [ ] Mark-all-read (the checkmark icon) clears the unread dot on both
       screens
+
+## The rule to remember before adding a third notification path
+
+If a future feature needs to notify yet another user (an admin, a
+different role, whatever) — **the write always has to happen server-side
+via `firebase-admin`, never as a direct client Firestore write**, no
+matter how tempting the direct write looks in the moment. `allow write:
+if false` on `/notifications/{uid}/items` is deliberate and total; there
+isn't a client-side rule variant of this collection to reach for. Add a
+new `donordrop-admin` API route (same shape as `notify-matches` and
+`notify-requester`) rather than trying to write through the client SDK
+— the first attempt at requester notifications hit exactly this wall.

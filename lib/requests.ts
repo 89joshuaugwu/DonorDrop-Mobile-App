@@ -2,7 +2,6 @@ import {
   collection,
   doc,
   setDoc,
-  addDoc,
   getDoc,
   getDocs,
   updateDoc,
@@ -90,16 +89,15 @@ export async function createRequest(input: CreateRequestInput): Promise<string> 
 /**
  * Donor responds "Available" or "Can't help right now" to a request.
  *
- * Also writes a notification doc for the REQUESTER when the donor says
- * they're available — this is the piece that was missing. Request
- * creation already notifies donors (via the notify-matches admin API
- * call in createRequest above), but nothing previously told the
- * requester when a donor actually responded, so their Notifications tab
- * had no way to ever show anything. This write only covers the in-app
- * Firestore-backed notification list — it does NOT send an OS push
- * notification to the requester's phone, since that needs the
- * firebase-admin SDK / FCM V1 credentials that only exist server-side
- * in donordrop-admin, not in this client app.
+ * Also tells the requester via a server-side call — NOT a direct
+ * Firestore write. /notifications/{uid}/items has `allow write: if
+ * false` in firestore.rules (server-side only, via firebase-admin), the
+ * same way donor-side notifications already work through
+ * notify-matches. A donor's own client can never legally write into a
+ * requester's notifications collection under these rules, so this has
+ * to go through donordrop-admin's /api/requests/notify-requester
+ * endpoint instead — mirrors createRequest's call to notify-matches
+ * below almost exactly.
  */
 export async function respondToRequest(
   requestId: string,
@@ -122,25 +120,23 @@ export async function respondToRequest(
   };
   await setDoc(responseRef, response);
 
-  if (available) {
+  if (available && ADMIN_API_URL) {
     try {
-      await addDoc(collection(db, "notifications", requesterUid, "items"), {
-        requestId,
-        title: "A donor is available",
-        body: `${donorName} (${donorBloodType}) can help with your request${
-          hospitalName ? ` at ${hospitalName}` : ""
-        }.`,
-        read: false,
-        createdAt: new Date().toISOString(),
+      await fetch(`${ADMIN_API_URL}/api/requests/notify-requester`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId, donorName, donorBloodType, available }),
       });
     } catch (err) {
-      // Response is already saved even if this write fails — the
-      // requester just won't see an in-app notification for it. Their
+      // Response is already saved even if this call fails — the
+      // requester just won't get an in-app notification for it. Their
       // "Donor Matches" stat (subscribeToRequestMatchCount) still
       // updates live regardless, since that reads the responses
-      // subcollection directly rather than depending on this doc.
-      console.warn("Could not write requester notification", err);
+      // subcollection directly rather than depending on this call.
+      console.error("notify-requester call failed", err);
     }
+  } else if (available && !ADMIN_API_URL) {
+    console.warn("EXPO_PUBLIC_ADMIN_API_URL is not set — skipping notify-requester call.");
   }
 }
 

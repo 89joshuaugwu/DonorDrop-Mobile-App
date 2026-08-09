@@ -25,7 +25,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#DC2626"
       },
-      "package": "com.builtwithzaza.donordrop",
+      "package": "com.joshuazaza.donordrop",
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
