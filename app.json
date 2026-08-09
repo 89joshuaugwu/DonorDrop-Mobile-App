@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "DonorDrop",
-    "slug": "donordrop-app",
+    "slug": "donordrop",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -68,9 +68,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "0ad4470e-fa2c-40b9-b0bb-36070676a215"
+        "projectId": "397f2278-fb43-43aa-9b28-1bae698b88c8"
       }
     },
-    "owner": "joshuazazas-team"
+    "owner": "joshuazazas89-team"
   }
 }
