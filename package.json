@@ -17,6 +17,7 @@
     "expo": "^54.0.0",
     "expo-auth-session": "~7.0.11",
     "expo-constants": "~18.0.13",
+    "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.10",
     "expo-font": "~14.0.12",
     "expo-image-picker": "~17.0.11",
@@ -46,5 +47,8 @@
     "@types/react": "~19.1.10",
     "typescript": "^5.5.4"
   },
-  "private": true
+  "private": true,
+  "allowScripts": {
+    "protobufjs@7.6.5": true
+  }
 }
