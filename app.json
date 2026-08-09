@@ -17,7 +17,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.buildwithzaza.donordrop",
+      "bundleIdentifier": "com.builtwithzaza.donordrop",
       "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
@@ -25,7 +25,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#DC2626"
       },
-      "package": "com.buildwithzaza.donordrop",
+      "package": "com.builtwithzaza.donordrop",
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
