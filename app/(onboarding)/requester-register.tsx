@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { doc, setDoc } from "firebase/firestore";
 import { User, Phone, Building2 } from "lucide-react-native";
 import { db } from "@/lib/firebase";
+import { registerForPushNotifications } from "@/lib/push";
 import { useAuth } from "@/lib/AuthContext";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
@@ -22,11 +23,19 @@ export default function RequesterRegisterScreen() {
     if (!user || !name.trim() || !phone.trim()) return;
     setLoading(true);
     try {
+      // Best-effort — registerForPushNotifications triggers the OS
+      // permission prompt itself and resolves null on simulators or if
+      // denied, same as the donor flow. Not blocking submission on this
+      // is deliberate: a requester should never be stuck unable to post
+      // a request because of a notification permission dialog.
+      const pushToken = await registerForPushNotifications(user.uid);
+
       await setDoc(doc(db, "requesters", user.uid), {
         uid: user.uid,
         name: name.trim(),
         phone: phone.trim(),
         organization: organization.trim() || null,
+        ...(pushToken ? { pushToken } : {}),
         createdAt: new Date().toISOString(),
       });
       await refreshProfiles();

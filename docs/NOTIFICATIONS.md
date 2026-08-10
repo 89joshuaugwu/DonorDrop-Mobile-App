@@ -11,6 +11,35 @@ worth keeping them mentally separate because they fail independently:
    Firestore directly. This can work even if push notifications are
    completely broken, and vice versa — they're not the same pipeline.
 
+## Manual permission controls (profile screens)
+
+Both profile screens now have a small permissions card
+(`components/molecules/PermissionRow.tsx`) instead of handling
+notifications/location entirely silently in the background. This closes
+a real gap: the automatic re-check on mount can retry an
+`undetermined` permission, but once someone has explicitly **denied**
+a permission, iOS/Android both refuse to show the system dialog again —
+calling `request*PermissionsAsync()` a second time just immediately
+resolves back to `"denied"` with no UI at all. The only real fix at
+that point is deep-linking to the OS Settings app
+(`Linking.openSettings()`), which is what the button does once status
+is `"denied"`.
+
+- **Donor profile**: Notifications + Location. Location is the more
+  important of the two to have here — `donor-register.tsx`'s onboarding
+  flow lets someone skip location entirely (`PermissionPrompt`'s "Not
+  now"), and there was previously no way to add it later short of
+  clearing app data and re-registering. A donor stuck at `lat: 0, lng:
+  0` silently never matches any request, with no error pointing at why
+  — see `lib/location.ts#refreshDonorLocation`. The location button
+  also stays visible even once granted (`grantedActionLabel="Refresh"`)
+  since a granted permission doesn't mean the *stored* coordinates are
+  still accurate — donors who've relocated need a way to update them.
+- **Requester profile**: Notifications only. Requesters don't have a
+  persistent location on their profile — location is per-request,
+  captured in `post-request.tsx` at the time they post, not something
+  that lives on `RequesterProfile`.
+
 ## Push token registration (this app's half)
 
 `lib/push.ts#registerForPushNotifications`:
@@ -24,9 +53,43 @@ worth keeping them mentally separate because they fail independently:
 - Does **not** write the token to Firestore itself — see the comment in
   that file for why (the donor doc doesn't exist yet at the point this
   is first called during onboarding). The token gets included directly
-  in the initial `setDoc` in `donor-register.tsx`, and re-registered via
-  `setDoc(..., { merge: true })` from the profile screen on subsequent
-  app opens if it's missing.
+  in the initial `setDoc` in `donor-register.tsx` / `requester-register.tsx`,
+  and re-checked/re-persisted from the respective profile screen on
+  every subsequent app open (see below — this used to be broken).
+
+### A real bug this surfaced: stale tokens after an EAS project migration
+
+Expo push tokens are tied to the `projectId` they were issued under.
+Moving to a new EAS project (a real thing that happened during this
+project's development) silently invalidates every previously-issued
+token — anyone registered before the migration keeps a `pushToken` field
+that *looks* present but no longer routes anywhere.
+
+The donor and requester profile screens' original re-registration logic
+made this worse than it needed to be: it called
+`registerForPushNotifications()` to fetch a fresh token, then **never
+did anything with the return value** — the token was fetched and
+discarded on every mount. Combined with a guard of
+`if (!donorProfile.pushToken)`, this meant:
+- A donor/requester who already had *any* token (even a stale one)
+  would never get it refreshed, since the field wasn't empty.
+- A donor/requester with no token at all was in a worse spot: the
+  effect's dependency array included the profile object itself, and
+  the discarded fetch still called `refreshProfiles()` — which produces
+  a new profile object reference every time — so the effect kept
+  re-triggering itself. An actual infinite loop, just one that hadn't
+  been hit yet because most test accounts already had *some* token
+  sitting in Firestore from before.
+
+Both profile screens now: depend only on `user` (not the profile
+object) so calling `refreshProfiles()` inside the effect can't
+re-trigger it, read the current token through a `ref` instead of a
+dependency, and **actually persist** the fetched token via
+`setDoc(..., { merge: true })` whenever it differs from what's stored.
+This makes token refresh self-healing — opening the profile screen
+after any future migration (or after a token simply rotates, which
+happens on its own sometimes) fixes itself without needing a manual
+Firestore edit.
 
 ## The "Default FirebaseApp is not initialized" error
 
@@ -107,13 +170,15 @@ somewhere visible).
 server-side to get `requesterUid` (never trusts the client to declare
 whose notifications collection to write to), and writes the notification
 via `firebase-admin`, which bypasses the client rule entirely because
-it's not going through client Firestore access at all. **This is
-Firestore-only, still no OS push** — an actual phone banner would need
-requesters to hold a push token too, which they currently don't
-(`RequesterProfile` has no `pushToken` field, and there's no push
-registration flow for requesters — only donors register for push
-today). That's a legitimate future addition if requesters should get
-real push, not just an in-app list entry.
+it's not going through client Firestore access at all. It **also** now
+sends an actual push, the same way `notifyMatchingDonors` does for
+donors — `RequesterProfile` grew a `pushToken` field, and
+`requester-register.tsx`/the requester profile screen register for push
+the same way the donor side does (see the stale-token section above).
+Existing requester accounts created before this change won't have a
+token until they next open their profile screen — the in-app
+notification write still happens for them regardless, just without the
+phone banner until then.
 
 ## Quick verification checklist
 

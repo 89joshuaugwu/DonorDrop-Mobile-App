@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, Switch } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, ScrollView, Switch, Linking } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { collection, query, where, orderBy, getDocs, doc, updateDoc } from "firebase/firestore";
-import { BadgeCheck } from "lucide-react-native";
+import { collection, query, where, orderBy, getDocs, doc, setDoc, updateDoc } from "firebase/firestore";
+import { BadgeCheck, Bell, MapPin } from "lucide-react-native";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/AuthContext";
 import { logDonation } from "@/lib/donations";
-import { registerForPushNotifications } from "@/lib/push";
+import { registerForPushNotifications, getNotificationPermissionStatus } from "@/lib/push";
+import { getLocationPermissionStatus, refreshDonorLocation } from "@/lib/location";
 import { logout } from "@/lib/auth";
 import Avatar from "@/components/ui/Avatar";
 import RoleTag from "@/components/ui/RoleTag";
@@ -15,6 +16,7 @@ import StatCard from "@/components/ui/StatCard";
 import SectionHeader from "@/components/ui/SectionHeader";
 import Card from "@/components/ui/Card";
 import DonationHistoryItem from "@/components/molecules/DonationHistoryItem";
+import PermissionRow, { type PermissionStatus } from "@/components/molecules/PermissionRow";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import type { Donation } from "@/types/donation";
@@ -29,6 +31,10 @@ export default function DonorProfileScreen() {
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [location, setLocation] = useState("");
   const [saving, setSaving] = useState(false);
+  const [notifStatus, setNotifStatus] = useState<PermissionStatus>("checking");
+  const [locStatus, setLocStatus] = useState<PermissionStatus>("checking");
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [locLoading, setLocLoading] = useState(false);
 
   const loadDonations = useCallback(async () => {
     if (!user) return;
@@ -44,13 +50,93 @@ export default function DonorProfileScreen() {
     }, [loadDonations])
   );
 
-  // Register push token on mount if not already registered — per
-  // CONTEXT.md Section 7's registerForPushNotifications().
+  // Keeps a live ref to the current donor profile WITHOUT it being a
+  // dependency of the push-registration effect below — reading through
+  // a ref instead of depending on the object directly is what stops
+  // that effect from re-triggering itself every time it calls
+  // refreshProfiles() (a new donorProfile object is a new dependency
+  // value; depending on it directly would re-fire this effect forever,
+  // the same infinite-loop class documented in docs/REALTIME.md).
+  const donorProfileRef = useRef(donorProfile);
   useEffect(() => {
-    if (user && donorProfile && !donorProfile.pushToken) {
-      registerForPushNotifications(user.uid).then(() => refreshProfiles());
+    donorProfileRef.current = donorProfile;
+  }, [donorProfile]);
+
+  // Re-checks the push token once per login session (effect only
+  // depends on `user`, not `donorProfile`) and WRITES it if it's
+  // missing or has changed. The old version fetched a fresh token and
+  // discarded it — registerForPushNotifications() was called but its
+  // return value was never persisted anywhere, so a stale token could
+  // never self-heal. This matters most right after an EAS project
+  // migration: Expo push tokens are tied to the projectId they were
+  // issued under, so every donor registered before a migration is left
+  // holding a token that looks present (so nothing ever re-fetches) but
+  // no longer routes anywhere.
+  //
+  // The old `if (!donorProfile.pushToken)` guard was also a latent
+  // infinite loop: if a donor never got a token in the first place
+  // (permission denied, etc.), the discarded fetch meant the field
+  // stayed unset forever, so the condition stayed true and
+  // refreshProfiles() kept producing a new donorProfile object that
+  // re-triggered this same effect — the exact loop class documented in
+  // docs/REALTIME.md. Depending only on `user` here, and reading the
+  // current token through a ref instead of the effect's own dependency
+  // array, closes both problems at once.
+  useEffect(() => {
+    if (!user) return;
+    registerForPushNotifications(user.uid).then(async (token) => {
+      if (token && token !== donorProfileRef.current?.pushToken) {
+        await setDoc(doc(db, "donors", user.uid), { pushToken: token }, { merge: true });
+        await refreshProfiles();
+      }
+    });
+  }, [user]);
+
+  // Read-only status check for the two PermissionRow buttons below —
+  // does NOT trigger an OS prompt on its own, unlike the effect above.
+  // Runs once per mount so the buttons reflect reality (granted/denied/
+  // undetermined) rather than assuming everything's fine.
+  useEffect(() => {
+    getNotificationPermissionStatus().then(setNotifStatus);
+    getLocationPermissionStatus().then(setLocStatus);
+  }, []);
+
+  async function handleNotificationsPress() {
+    if (notifStatus === "denied") {
+      Linking.openSettings();
+      return;
     }
-  }, [user, donorProfile]);
+    if (!user) return;
+    setNotifLoading(true);
+    try {
+      const token = await registerForPushNotifications(user.uid);
+      if (token) {
+        await setDoc(doc(db, "donors", user.uid), { pushToken: token }, { merge: true });
+        await refreshProfiles();
+      }
+      setNotifStatus(await getNotificationPermissionStatus());
+    } finally {
+      setNotifLoading(false);
+    }
+  }
+
+  async function handleLocationPress() {
+    if (locStatus === "denied") {
+      Linking.openSettings();
+      return;
+    }
+    if (!user) return;
+    setLocLoading(true);
+    try {
+      const result = await refreshDonorLocation(user.uid);
+      setLocStatus(result);
+      if (result === "granted") {
+        await refreshProfiles();
+      }
+    } finally {
+      setLocLoading(false);
+    }
+  }
 
   async function handleLogDonation() {
     if (!user || !location.trim()) return;
@@ -111,6 +197,28 @@ export default function DonorProfileScreen() {
             value={donorProfile.isVisible}
             onValueChange={handleToggleVisibility}
             trackColor={{ false: "#E2E8F0", true: "#DC2626" }}
+          />
+        </Card>
+
+        <Card className="mb-4 px-4">
+          <PermissionRow
+            icon={Bell}
+            label="Notifications"
+            description="Get alerted the moment a nearby request matches your blood type"
+            status={notifStatus}
+            onPress={handleNotificationsPress}
+            actionLabel="Enable"
+            loading={notifLoading}
+          />
+          <PermissionRow
+            icon={MapPin}
+            label="Location"
+            description="Keeps your distance-to-request accurate — update this if you've moved"
+            status={locStatus}
+            onPress={handleLocationPress}
+            actionLabel="Enable"
+            grantedActionLabel="Refresh"
+            loading={locLoading}
           />
         </Card>
 

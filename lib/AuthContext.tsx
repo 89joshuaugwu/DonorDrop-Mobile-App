@@ -10,6 +10,7 @@ export interface RequesterProfile {
   name: string;
   phone: string;
   organization?: string;
+  pushToken?: string;
 }
 
 interface AuthContextValue {

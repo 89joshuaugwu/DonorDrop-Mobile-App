@@ -31,6 +31,23 @@ Notifications.setNotificationHandler({
  * rotated), use setDoc(..., { merge: true }) at the call site, never
  * updateDoc.
  */
+/**
+ * Current notification permission status, for UI that needs to show a
+ * real state (profile screens' PermissionRow) rather than just firing a
+ * request blindly. Kept as a separate function from
+ * registerForPushNotifications so a screen can check status on mount
+ * without also triggering a permission prompt as a side effect.
+ */
+export async function getNotificationPermissionStatus(): Promise<
+  "granted" | "denied" | "undetermined"
+> {
+  if (!Device.isDevice) return "undetermined";
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status === "granted") return "granted";
+  if (status === "denied") return "denied";
+  return "undetermined";
+}
+
 export async function registerForPushNotifications(uid: string): Promise<string | null> {
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("default", {
